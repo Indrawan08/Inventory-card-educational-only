@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kartu Persediaan FIFO Perpetual</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f8f9fa;
+        }
+        header {
+            background-color: #007bff;
+            color: white;
+            text-align: center;
+            padding: 1rem;
+        }
+        .container {
+            max-width: 900px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: white;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            border-radius: 5px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        table th, table td {
+            border: 1px solid #ddd;
+            text-align: center;
+            padding: 10px;
+        }
+        table th {
+            background-color: #007bff;
+            color: white;
+        }
+        form {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        form input, form select, form button {
+            padding: 10px;
+            font-size: 1rem;
+        }
+        form button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        form button:hover {
+            background-color: #0056b3;
+        }
+        .btn-edit, .btn-delete {
+            cursor: pointer;
+            padding: 5px 10px;
+            color: white;
+            border: none;
+            border-radius: 3px;
+        }
+        .btn-edit {
+            background-color: #ffc107;
+        }
+        .btn-delete {
+            background-color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Kartu Persediaan FIFO Perpetual</h1>
+    </header>
+    <div class="container">
+        <form id="transaction-form">
+            <input type="hidden" id="transaction-id">
+            <input type="date" id="date" required>
+            <input type="text" id="item-name" placeholder="Nama Barang" required>
+            <select id="transaction-type">
+                <option value="pembelian">Pembelian</option>
+                <option value="penjualan">Penjualan</option>
+                <option value="retur_pembelian">Retur Pembelian</option>
+                <option value="retur_penjualan">Retur Penjualan</option>
+            </select>
+            <input type="number" id="quantity" placeholder="Jumlah" min="1" required>
+            <input type="number" id="unit-price" placeholder="Harga Satuan (Rp)" min="1" required>
+            <button type="submit">Simpan Transaksi</button>
+        </form>
+
+        <h2>Data Transaksi</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Tanggal</th>
+                    <th>Nama Barang</th>
+                    <th>Jenis</th>
+                    <th>Jumlah</th>
+                    <th>Harga Satuan</th>
+                    <th>Total</th>
+                    <th>Aksi</th>
+                </tr>
+            </thead>
+            <tbody id="transaction-table">
+                <!-- Data transaksi akan muncul di sini -->
+            </tbody>
+        </table>
+
+        <h2>Ringkasan Persediaan</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Nama Barang</th>
+                    <th>Jumlah Tersisa</th>
+                    <th>Total Harga (Rp)</th>
+                </tr>
+            </thead>
+            <tbody id="inventory-table">
+                <!-- Data persediaan akan muncul di sini -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        let transactions = JSON.parse(localStorage.getItem('transactions')) || [];
+        let inventory = {};
+
+        const form = document.getElementById('transaction-form');
+        const transactionTable = document.getElementById('transaction-table');
+        const inventoryTable = document.getElementById('inventory-table');
+
+        // Muat data dari localStorage saat halaman dimuat
+        document.addEventListener('DOMContentLoaded', () => {
+            renderTransactions();
+            updateInventory();
+        });
+
+        // Tambah atau update transaksi
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const transactionId = document.getElementById('transaction-id').value;
+            const date = document.getElementById('date').value;
+            const itemName = document.getElementById('item-name').value;
+            const transactionType = document.getElementById('transaction-type').value;
+            const quantity = parseInt(document.getElementById('quantity').value);
+            const unitPrice = parseInt(document.getElementById('unit-price').value);
+
+            if (transactionId) {
+                transactions = transactions.map(trx =>
+                    trx.id === transactionId
+                        ? { id: transactionId, date, itemName, transactionType, quantity, unitPrice }
+                        : trx
+                );
+            } else {
+                const id = new Date().getTime().toString();
+                transactions.push({ id, date, itemName, transactionType, quantity, unitPrice });
+            }
+
+            saveToLocalStorage();
+            resetForm();
+            renderTransactions();
+            updateInventory();
+        });
+
+        // Render data transaksi
+        function renderTransactions() {
+    // Urutkan transaksi berdasarkan tanggal (paling muda ke paling tua)
+    transactions.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    transactionTable.innerHTML = '';
+    transactions.forEach((trx) => {
+        const total = trx.quantity * trx.unitPrice;
+        const rowClass = `row-${trx.transactionType}`; // Tentukan kelas berdasarkan jenis transaksi
+        transactionTable.innerHTML += `
+            <tr class="${rowClass}">
+                <td>${trx.date}</td>
+                <td>${trx.itemName}</td>
+                <td>${trx.transactionType.replace('_', ' ')}</td>
+                <td>${trx.quantity}</td>
+                <td>Rp ${trx.unitPrice.toLocaleString()}</td>
+                <td>Rp ${total.toLocaleString()}</td>
+                <td>
+                    <button class="btn-edit" onclick="editTransaction('${trx.id}')">Edit</button>
+                    <button class="btn-delete" onclick="deleteTransaction('${trx.id}')">Hapus</button>
+                </td>
+            </tr>
+        `;
+    });
+}
+        // Update inventory berdasarkan transaksi
+        function updateInventory() {
+            inventory = {};
+
+            transactions.forEach((trx) => {
+                if (!inventory[trx.itemName]) inventory[trx.itemName] = [];
+
+                if (trx.transactionType === 'pembelian') {
+                    inventory[trx.itemName].push({ quantity: trx.quantity, unitPrice: trx.unitPrice });
+                } else if (trx.transactionType === 'penjualan') {
+                    let qtyToSell = trx.quantity;
+                    while (qtyToSell > 0 && inventory[trx.itemName].length > 0) {
+                        const batch = inventory[trx.itemName][0];
+                        if (batch.quantity > qtyToSell) {
+                            batch.quantity -= qtyToSell;
+                            qtyToSell = 0;
+                        } else {
+                            qtyToSell -= batch.quantity;
+                            inventory[trx.itemName].shift();
+                        }
+                    }
+                } else if (trx.transactionType === 'retur_pembelian') {
+                    let qtyToReturn = trx.quantity;
+                    while (qtyToReturn > 0 && inventory[trx.itemName].length > 0) {
+                        const batch = inventory[trx.itemName][0];
+                        if (batch.quantity > qtyToReturn) {
+                            batch.quantity -= qtyToReturn;
+                            qtyToReturn = 0;
+                        } else {
+                            qtyToReturn -= batch.quantity;
+                            inventory[trx.itemName].shift();
+                        }
+                    }
+                } else if (trx.transactionType === 'retur_penjualan') {
+                    inventory[trx.itemName].push({ quantity: trx.quantity, unitPrice: trx.unitPrice });
+                }
+            });
+
+            renderInventory();
+        }
+
+        // Render data inventory
+        function renderInventory() {
+            inventoryTable.innerHTML = '';
+            for (const itemName in inventory) {
+                let totalQuantity = 0;
+                let totalPrice = 0;
+                inventory[itemName].forEach(batch => {
+                    totalQuantity += batch.quantity;
+                    totalPrice += batch.quantity * batch.unitPrice;
+                });
+
+                inventoryTable.innerHTML += `
+                    <tr>
+                        <td>${itemName}</td>
+                        <td>${totalQuantity}</td>
+                        <td>Rp ${totalPrice.toLocaleString()}</td>
+                    </tr>
+                `;
+            }
+        }
+
+        // Simpan data ke localStorage
+        function saveToLocalStorage() {
+            localStorage.setItem('transactions', JSON.stringify(transactions));
+        }
+
+        function editTransaction(id) {
+            const trx = transactions.find(t => t.id === id);
+            if (trx) {
+                document.getElementById('transaction-id').value = trx.id;
+                document.getElementById('date').value = trx.date;
+                document.getElementById('item-name').value = trx.itemName;
+                document.getElementById('transaction-type').value = trx.transactionType;
+                document.getElementById('quantity').value = trx.quantity;
+                document.getElementById('unit-price').value = trx.unitPrice;
+            }
+        }
+
+        function deleteTransaction(id) {
+            transactions = transactions.filter(trx => trx.id !== id);
+            saveToLocalStorage();
+            renderTransactions();
+            updateInventory();
+        }
+
+        function resetForm() {
+            form.reset();
+            document.getElementById('transaction-id').value = '';
+        }
+    </script>
+</body>
+</html>
